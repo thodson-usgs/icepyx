@@ -67,9 +67,7 @@ class Variables(EarthdataAuthMixin):
         # initialize authentication properties
         EarthdataAuthMixin.__init__(self, auth=auth)
 
-        # Always initialize _path so the `.path` property and downstream guards
-        # don't AttributeError when the user constructed with `product=` only.
-        self._path = None
+        self._path = None  # default for product-only construction
 
         # Set the product and version from either the input args or the file
         if path:
@@ -100,7 +98,7 @@ class Variables(EarthdataAuthMixin):
 
     @property
     def path(self):
-        return self._path if self._path else None
+        return self._path
 
     @property
     def product(self):
