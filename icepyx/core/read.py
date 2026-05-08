@@ -45,11 +45,11 @@ def _make_np_datetime(df, keyword):
 
     """
 
-    if df[keyword].str.endswith("Z"):
-        # manually remove 'Z' from datetime to allow conversion to np.datetime64 object
-        # (support for timezones is deprecated and causes a seg fault)
+    # numpy.datetime64 doesn't accept the trailing 'Z' UTC marker; strip
+    # it when present (IS-2 timestamps within a granule are formatted
+    # uniformly, so .all() collapses the per-element check to a scalar).
+    if df[keyword].str.endswith("Z").all():
         df.update({keyword: df[keyword].str[:-1].astype("datetime64[ns]")})
-
     else:
         df[keyword] = df[keyword].astype("datetime64[ns]")
 
@@ -116,19 +116,18 @@ def _parse_source(data_source, glob_kwargs={}) -> list:
     from pathlib import Path
 
     if isinstance(data_source, list):
-        assert [isinstance(f, (str, Path)) for f in data_source]
-        # if data_source is a list pass that directly to _filelist
-        filelist = data_source
-    elif os.path.isdir(data_source):
-        # if data_source is a directory glob search the directory and assign to _filelist
-        data_source = os.path.join(data_source, "*")
-        filelist = glob.glob(data_source, **glob_kwargs)
+        if not all(isinstance(f, (str, Path)) for f in data_source):
+            raise TypeError(
+                "When data_source is a list, every element must be a str or pathlib.Path"
+            )
+        filelist = list(data_source)
     elif isinstance(data_source, (Path, str)):
-        if data_source.startswith("s3"):
-            # if the string is an s3 path put it in the _filelist without globbing
+        data_source = os.fspath(data_source)
+        if os.path.isdir(data_source):
+            filelist = glob.glob(os.path.join(data_source, "*"), **glob_kwargs)
+        elif data_source.startswith("s3"):
             filelist = [data_source]
         else:
-            # data_source is a globable string
             filelist = glob.glob(data_source, **glob_kwargs)
     else:
         raise TypeError(
@@ -793,7 +792,8 @@ class Read(EarthdataAuthMixin):
                 # get those so they have actual coordinates and add them
                 # this may apply to (at a minimum): ATL06, ATL08
                 if any(grp_path in grp_path2 for grp_path2 in wanted_groups_list):
-                    for grp_path2 in wanted_groups_list:
+                    # iterate a snapshot — we mutate the list inside the loop
+                    for grp_path2 in list(wanted_groups_list):
                         if grp_path in grp_path2:
                             sub_ds = self._read_single_grp(file, grp_path2)
                             ds = Read._combine_nested_vars(
