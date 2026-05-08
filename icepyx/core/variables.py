@@ -67,6 +67,8 @@ class Variables(EarthdataAuthMixin):
         # initialize authentication properties
         EarthdataAuthMixin.__init__(self, auth=auth)
 
+        self._path = None  # default for product-only construction
+
         # Set the product and version from either the input args or the file
         if path:
             self._path = val.check_s3bucket(path)
@@ -96,7 +98,7 @@ class Variables(EarthdataAuthMixin):
 
     @property
     def path(self):
-        return self._path if self._path else None
+        return self._path
 
     @property
     def product(self):
@@ -125,7 +127,7 @@ class Variables(EarthdataAuthMixin):
         """
 
         if not hasattr(self, "_avail") or self._avail is None:
-            if not hasattr(self, "path") or self.path.startswith("s3"):
+            if self._path is None or self._path.startswith("s3"):
                 try:
                     url = "https://raw.githubusercontent.com/icesat2py/is2_test_data/refs/heads/main/is2_test_data/data/is2variables.json"
                     response = requests.get(url, headers={"Accept": "application/json"})

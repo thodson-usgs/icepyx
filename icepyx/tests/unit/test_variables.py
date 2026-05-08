@@ -1,4 +1,11 @@
 import icepyx.core.variables as variables
+from icepyx.core.variables import Variables
+
+
+def test_product_only_init_path_is_none():
+    v = Variables(product="ATL06")
+    assert v.path is None
+    assert v.product == "ATL06"
 
 
 def test_list_of_dict_vals():
