@@ -1,4 +1,15 @@
 import icepyx.core.variables as variables
+from icepyx.core.variables import Variables
+
+
+def test_product_only_init_path_is_none():
+    """Variables(product=...) constructs without crashing and exposes
+    .path as None. Regression: previously the .path property accessed
+    the never-set self._path and raised AttributeError.
+    """
+    v = Variables(product="ATL06")
+    assert v.path is None
+    assert v.product == "ATL06"
 
 
 def test_list_of_dict_vals():
