@@ -257,10 +257,8 @@ def validate_polygon_pairs(spatial_extent):
             spatial_extent.append(spatial_extent[0])
 
         elif isinstance(spatial_extent, np.ndarray):
-            # use np.insert() method
-            spatial_extent = np.insert(
-                spatial_extent, len(spatial_extent), spatial_extent[0]
-            )
+            # np.insert without axis flattens; np.vstack preserves the (N, 2) shape
+            spatial_extent = np.vstack([spatial_extent, spatial_extent[0]])
 
     polygon = (",".join([str(c) for xy in spatial_extent for c in xy])).split(",")
 
