@@ -45,15 +45,11 @@ def _make_np_datetime(df, keyword):
 
     """
 
-    # `.str.endswith("Z")` returns a per-element boolean array; using it
-    # directly as an `if` condition raises ValueError on multi-element
-    # arrays. ICESat-2 timestamps in a granule are formatted uniformly,
-    # so `.all()` (all elements end with 'Z') captures the intent.
+    # numpy.datetime64 doesn't accept the trailing 'Z' UTC marker; strip
+    # it when present (IS-2 timestamps within a granule are formatted
+    # uniformly, so .all() collapses the per-element check to a scalar).
     if df[keyword].str.endswith("Z").all():
-        # manually remove 'Z' from datetime to allow conversion to np.datetime64 object
-        # (support for timezones is deprecated and causes a seg fault)
         df.update({keyword: df[keyword].str[:-1].astype("datetime64[ns]")})
-
     else:
         df[keyword] = df[keyword].astype("datetime64[ns]")
 
@@ -120,32 +116,18 @@ def _parse_source(data_source, glob_kwargs={}) -> list:
     from pathlib import Path
 
     if isinstance(data_source, list):
-        # `assert [list_comp]` is always truthy because a non-empty list is
-        # truthy regardless of the comprehension's contents. Use `all(...)` so
-        # the assertion actually validates the element types. Raise TypeError
-        # explicitly so this still validates under `python -O` (which strips
-        # asserts).
         if not all(isinstance(f, (str, Path)) for f in data_source):
             raise TypeError(
                 "When data_source is a list, every element must be a str or pathlib.Path"
             )
-        # if data_source is a list pass that directly to _filelist
-        filelist = data_source
+        filelist = list(data_source)
     elif isinstance(data_source, (Path, str)):
-        # `pathlib.Path` is not a `str` and has no `.startswith` method, so
-        # coerce to a string here before any string-shaped checks (s3 prefix,
-        # glob, isdir).
         data_source = os.fspath(data_source)
         if os.path.isdir(data_source):
-            # if data_source is a directory glob search the directory and
-            # assign to _filelist
-            data_source = os.path.join(data_source, "*")
-            filelist = glob.glob(data_source, **glob_kwargs)
+            filelist = glob.glob(os.path.join(data_source, "*"), **glob_kwargs)
         elif data_source.startswith("s3"):
-            # if the string is an s3 path put it in the _filelist without globbing
             filelist = [data_source]
         else:
-            # data_source is a globable string
             filelist = glob.glob(data_source, **glob_kwargs)
     else:
         raise TypeError(
@@ -810,8 +792,7 @@ class Read(EarthdataAuthMixin):
                 # get those so they have actual coordinates and add them
                 # this may apply to (at a minimum): ATL06, ATL08
                 if any(grp_path in grp_path2 for grp_path2 in wanted_groups_list):
-                    # Iterate a snapshot of the list so removing nested-match
-                    # entries doesn't shift indices and silently skip groups.
+                    # iterate a snapshot — we mutate the list inside the loop
                     for grp_path2 in list(wanted_groups_list):
                         if grp_path in grp_path2:
                             sub_ds = self._read_single_grp(file, grp_path2)

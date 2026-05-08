@@ -18,33 +18,20 @@ def test_parse_source_bad_input_type():
         read._parse_source({"myfiles": "./my_valid_path/file.h5"})
 
 
-def test_parse_source_pathlib_input():
-    """Regression: passing a pathlib.Path used to crash with AttributeError
-    because the implementation called `data_source.startswith("s3")` directly
-    on the Path object, which has no .startswith method.
-    """
-    p = Path("./icepyx/core/is2ref.py")
-    filelist = read._parse_source(p)
-    # Path normalizes "./..." to "..."; just confirm we got back a single
-    # file matching the original Path (resolved equivalently).
+def test_parse_source_pathlib_input(tmp_path):
+    f = tmp_path / "fake.h5"
+    f.touch()
+    filelist = read._parse_source(f)
     assert len(filelist) == 1
-    assert Path(filelist[0]) == p
+    assert Path(filelist[0]) == f
 
 
 def test_parse_source_list_of_wrong_types_raises():
-    """Regression: `assert [isinstance(...) for ...]` always evaluated to a
-    truthy non-empty list, so non-str/non-Path elements silently passed
-    validation. Now we raise TypeError explicitly.
-    """
     with pytest.raises(TypeError, match="must be a str or pathlib.Path"):
         read._parse_source([1, 2, 3])
 
 
 def test_make_np_datetime_multielement_z_suffix():
-    """Regression: `if df[keyword].str.endswith("Z"):` raised
-    "truth value of an array is ambiguous" for arrays with more than one
-    element. Multi-element timestamp arrays are the norm in IS-2 data.
-    """
     ds = xr.Dataset(
         {
             "time": (
