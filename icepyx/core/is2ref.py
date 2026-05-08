@@ -283,6 +283,22 @@ def latest_version(product):
     return max([entry["version_id"] for entry in _about_product["feed"]["entry"]])
 
 
+def _open_h5(filepath, auth=None):
+    """Open an ICESat-2 HDF5 granule from a local path or s3 URL for reading.
+
+    Returns an `h5py.File` opened in `"r"` mode. The caller owns the
+    returned handle (use it as a context manager).
+    """
+    if filepath.startswith("s3"):
+        if not auth:
+            raise AttributeError(
+                "Must provide credentials to `auth` if accessing s3 data"
+            )
+        s3 = earthaccess.get_s3fs_session(daac="NSIDC")
+        return h5py.File(s3.open(filepath, "rb"), "r")
+    return h5py.File(filepath, "r")
+
+
 def extract_product(filepath, auth=None):
     """
     Read the product type from the metadata of the file. Valid for local or s3 files, but must
@@ -296,37 +312,20 @@ def extract_product(filepath, auth=None):
         An earthaccess authentication object. Optional, but necessary if accessing data in an
         s3 bucket.
     """
-    # Generate a file reader object relevant for the file location
-    if filepath.startswith("s3"):
-        if not auth:
-            raise AttributeError(
-                "Must provide credentials to `auth` if accessing s3 data"
-            )
-        # Read the s3 file
-        s3 = earthaccess.get_s3fs_session(daac="NSIDC")
-        f = h5py.File(s3.open(filepath, "rb"))
-    else:
-        # Otherwise assume a local filepath. Read with h5py.
-        f = h5py.File(filepath, "r")
-
-    # Extract the product information
-    try:
-        product = f.attrs["short_name"]
-        if isinstance(product, bytes):
-            # For most products the short name is stored in a bytes string
-            product = product.decode()
-        elif isinstance(product, np.ndarray):
-            # ATL14 saves the short_name as an array ['ATL14']
-            product = product[0]
-        product = _validate_product(product)
-    except KeyError as e:
-        raise Exception(
-            "Unable to parse the product name from file metadata"
-        ).with_traceback(e.__traceback__)
-
-    # Close the file reader
-    f.close()
-    return product
+    with _open_h5(filepath, auth) as f:
+        try:
+            product = f.attrs["short_name"]
+            if isinstance(product, bytes):
+                # For most products the short name is stored in a bytes string
+                product = product.decode()
+            elif isinstance(product, np.ndarray):
+                # ATL14 saves the short_name as an array ['ATL14']
+                product = product[0]
+            return _validate_product(product)
+        except KeyError as e:
+            raise Exception(
+                "Unable to parse the product name from file metadata"
+            ).with_traceback(e.__traceback__)
 
 
 def extract_version(filepath, auth=None):
@@ -342,32 +341,18 @@ def extract_version(filepath, auth=None):
         An earthaccess authentication object. Optional, but necessary if accessing data in an
         s3 bucket.
     """
-    # Generate a file reader object relevant for the file location
-    if filepath.startswith("s3"):
-        if not auth:
-            raise AttributeError(
-                "Must provide credentials to `auth` if accessing s3 data"
-            )
-        # Read the s3 file
-        s3 = earthaccess.get_s3fs_session(daac="NSIDC")
-        f = h5py.File(s3.open(filepath, "rb"))
-    else:
-        # Otherwise assume a local filepath. Read with h5py.
-        f = h5py.File(filepath, "r")
-
-    # Read the version information
-    try:
-        version = f["METADATA"]["DatasetIdentification"].attrs["VersionID"]
-        if isinstance(version, np.ndarray):
-            # ATL14 stores the version as an array ['00x']
-            version = version[0]
-        if isinstance(version, bytes):
-            version = version.decode()
-
-    except KeyError as e:
-        raise Exception(
-            "Unable to parse the version from file metadata"
-        ).with_traceback(e.__traceback__)
+    with _open_h5(filepath, auth) as f:
+        try:
+            version = f["METADATA"]["DatasetIdentification"].attrs["VersionID"]
+            if isinstance(version, np.ndarray):
+                # ATL14 stores the version as an array ['00x']
+                version = version[0]
+            if isinstance(version, bytes):
+                version = version.decode()
+        except KeyError as e:
+            raise Exception(
+                "Unable to parse the version from file metadata"
+            ).with_traceback(e.__traceback__)
 
     # catch cases where the version number is an invalid string
     # e.g. a VersionID of "SET_BY_PGE", causing issues where version needs to be a valid number
@@ -379,7 +364,4 @@ def extract_version(filepath, auth=None):
             "provided in the metadata of this file."
             "Consider setting the version manually for further processing."
         )
-
-    # Close the file reader
-    f.close()
     return version
