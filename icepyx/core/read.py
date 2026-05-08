@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import glob
 import os
 import sys
@@ -542,7 +544,7 @@ class Read(EarthdataAuthMixin):
 
         return is2ds
 
-    def load(self):
+    def load(self, max_workers=2):
         """
         Create a single Xarray Dataset containing the data from one or more
         files and/or ground tracks.
@@ -550,6 +552,13 @@ class Read(EarthdataAuthMixin):
 
         All items in the wanted variables list will be loaded from the files into memory.
         If you do not provide a wanted variables list, a default one will be created for you.
+
+        Parameters
+        ----------
+        max_workers : int, default 2
+            Maximum number of granules to read concurrently. Use 1 to disable
+            concurrency; raise it (e.g. 8) for high-latency s3 reads. Local-
+            disk speedup plateaus past ~2 workers.
         """
 
         # todo:
@@ -604,29 +613,21 @@ class Read(EarthdataAuthMixin):
         except AttributeError:
             pass
 
-        all_dss = []
-
-        for file in self.filelist:
-            if file.startswith("s3"):
-                # If path is an s3 path create an s3fs filesystem to reference the file
-                # TODO would it be better to be able to generate an s3fs session from the Mixin?
-                s3 = earthaccess.get_s3_filesystem(daac="NSIDC")
-                # Goal: delegate most of the granule reading logic to earthaccess (xref https://github.com/icesat2py/icepyx/issues/575)
-                # See also: https://github.com/icesat2py/icepyx/pull/677/files#r2083622039
-                fsspec_params = {
-                    "cache_type": "blockcache",
-                    "block_size": 8 * 1024 * 1024,
-                }
-                file = s3.open(file, "rb", **fsspec_params)
-
-            all_dss.append(
-                self._build_single_file_dataset(file, groups_list)
-            )  # wanted_groups, vgrp.keys()))
-
-            # Closing the file prevents further operations on the dataset
-            # from s3fs.core import S3File
-            # if isinstance(file, S3File):
-            #     file.close()
+        # Hoist the s3fs filesystem out of the per-granule worker — fsspec
+        # constructs are cheap to dedupe but earthaccess's first-call cred
+        # fetch is racy when called from N threads concurrently.
+        # TODO would it be better to be able to generate an s3fs session from the Mixin?
+        # Goal: delegate most of the granule reading logic to earthaccess (xref https://github.com/icesat2py/icepyx/issues/575)
+        # See also: https://github.com/icesat2py/icepyx/pull/677/files#r2083622039
+        s3fs = earthaccess.get_s3_filesystem(daac="NSIDC") if self.is_s3 else None
+        worker = partial(self._read_one_granule, groups_list=groups_list, s3fs=s3fs)
+        workers = max(1, min(max_workers, len(self.filelist)))
+        if workers == 1:
+            # Avoid the pool's startup cost and keep tracebacks clean.
+            all_dss = [worker(f) for f in self.filelist]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                all_dss = list(ex.map(worker, self.filelist))
 
         if len(all_dss) == 1:
             return all_dss[0]
@@ -686,6 +687,20 @@ class Read(EarthdataAuthMixin):
             engine="h5netcdf",
             backend_kwargs={"phony_dims": "access"},
         )
+
+    def _read_one_granule(self, file, groups_list, s3fs=None):
+        """
+        Open a single granule (resolving s3 paths through `s3fs`) and read
+        the wanted variables. Used as the per-granule worker by `load`.
+        """
+        if self.is_s3:
+            file = s3fs.open(
+                file,
+                "rb",
+                cache_type="blockcache",
+                block_size=8 * 1024 * 1024,
+            )
+        return self._build_single_file_dataset(file, groups_list)
 
     def _build_single_file_dataset(self, file, groups_list):
         """
