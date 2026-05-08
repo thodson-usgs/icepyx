@@ -639,3 +639,27 @@ def test_avail_granule_CMR_error():
         CMRparams = {"temporal": "badinput"}
         # reqparams = {"version": "003", "short_name": "ATL08", "page_size": 1} deprecated
         Granules().get_avail(CMRparams=CMRparams)
+
+
+@responses.activate
+def test_get_avail_breaks_when_no_search_after_header():
+    """If CMR returns a non-empty page without CMR-Search-After, get_avail
+    must break instead of looping forever sending the same request.
+    """
+    cmr_url = re.compile(
+        re.escape("https://cmr.earthdata.nasa.gov/search/granules") + r".*"
+    )
+    # Single page with two entries, no CMR-Search-After header => last page.
+    responses.add(
+        responses.GET,
+        cmr_url,
+        status=200,
+        json={"feed": {"entry": [{"producer_granule_id": "x"}, {"producer_granule_id": "y"}]}},
+        headers={"CMR-Hits": "2"},
+    )
+
+    g = Granules()
+    g.get_avail(CMRparams={"concept_id": "C1234-NSIDC_CPRD"})
+    assert len(g.avail) == 2
+    # Exactly one HTTP call should have been issued.
+    assert len(responses.calls) == 1

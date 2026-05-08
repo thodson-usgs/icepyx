@@ -77,7 +77,7 @@ def gran_IDs(grans, ids=False, cycles=False, tracks=False, dates=False, cloud=Fa
             try:
                 for link in gran["links"]:
                     href = link["href"]
-                    if href.startswith("s3") and href.endswith((".h5", "nc")):
+                    if href.startswith("s3") and href.endswith((".h5", ".nc")):
                         gran_s3urls.append(href)
             except KeyError:
                 pass
@@ -248,6 +248,15 @@ class Granules(EarthdataAuthMixin):
 
             # Collect results
             self.avail.extend(results["feed"]["entry"])
+
+            # CMR signals "no more pages" by omitting CMR-Search-After. Break here so
+            # we don't re-request the same page if the final page returned data
+            # without the header.
+            if cmr_search_after is None:
+                assert len(self.avail) == int(response.headers["CMR-Hits"]), (
+                    "Search failure - unexpected number of results"
+                )
+                break
 
         assert len(self.avail) > 0, (
             "Your search returned no results; try different search parameters"
