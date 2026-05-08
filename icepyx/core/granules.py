@@ -34,6 +34,12 @@ def info(grans):
     return gran_info
 
 
+_GRANULE_ID_RE = re.compile(
+    r"(ATL\d{2})(-\d{2})?_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})"
+    r"(\d{2})_(\d{4})(\d{2})(\d{2})_(\d{3})_(\d{2})(.*?).(.*?)$"
+)
+
+
 # DevNote: currently this fn is not tested
 # DevNote: could add flag to separate ascending and descending orbits based on ATL03 granule region
 def gran_IDs(grans, ids=False, cycles=False, tracks=False, dates=False, cloud=False):
@@ -59,11 +65,6 @@ def gran_IDs(grans, ids=False, cycles=False, tracks=False, dates=False, cloud=Fa
         Return a a list of AWS s3 urls for the available granules in the granule dictionary.
     """
     assert len(grans) > 0, "Your data object has no granules associated with it"
-    # regular expression for extracting parameters from file names
-    rx = re.compile(
-        r"(ATL\d{2})(-\d{2})?_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})"
-        r"(\d{2})_(\d{4})(\d{2})(\d{2})_(\d{3})_(\d{2})(.*?).(.*?)$"
-    )
     gran_ids = []
     gran_cycles = []
     gran_tracks = []
@@ -109,7 +110,7 @@ def gran_IDs(grans, ids=False, cycles=False, tracks=False, dates=False, cloud=Fa
                 VERS,
                 AUX,
                 SFX,
-            ) = rx.findall(producer_granule_id).pop()
+            ) = _GRANULE_ID_RE.findall(producer_granule_id).pop()
             gran_cycles.append(CYCL)
             gran_tracks.append(TRK)
             gran_dates.append(
