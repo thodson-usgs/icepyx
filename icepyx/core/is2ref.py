@@ -304,28 +304,28 @@ def extract_product(filepath, auth=None):
             )
         # Read the s3 file
         s3 = earthaccess.get_s3fs_session(daac="NSIDC")
-        f = h5py.File(s3.open(filepath, "rb"))
+        file_handle = s3.open(filepath, "rb")
     else:
         # Otherwise assume a local filepath. Read with h5py.
-        f = h5py.File(filepath, "r")
+        file_handle = filepath
 
-    # Extract the product information
-    try:
-        product = f.attrs["short_name"]
-        if isinstance(product, bytes):
-            # For most products the short name is stored in a bytes string
-            product = product.decode()
-        elif isinstance(product, np.ndarray):
-            # ATL14 saves the short_name as an array ['ATL14']
-            product = product[0]
-        product = _validate_product(product)
-    except KeyError as e:
-        raise Exception(
-            "Unable to parse the product name from file metadata"
-        ).with_traceback(e.__traceback__)
+    # Extract the product information. Use a context manager so the underlying
+    # HDF5/s3 handle is released even if attribute parsing raises.
+    with h5py.File(file_handle, "r") as f:
+        try:
+            product = f.attrs["short_name"]
+            if isinstance(product, bytes):
+                # For most products the short name is stored in a bytes string
+                product = product.decode()
+            elif isinstance(product, np.ndarray):
+                # ATL14 saves the short_name as an array ['ATL14']
+                product = product[0]
+            product = _validate_product(product)
+        except KeyError as e:
+            raise Exception(
+                "Unable to parse the product name from file metadata"
+            ).with_traceback(e.__traceback__)
 
-    # Close the file reader
-    f.close()
     return product
 
 
@@ -350,24 +350,26 @@ def extract_version(filepath, auth=None):
             )
         # Read the s3 file
         s3 = earthaccess.get_s3fs_session(daac="NSIDC")
-        f = h5py.File(s3.open(filepath, "rb"))
+        file_handle = s3.open(filepath, "rb")
     else:
         # Otherwise assume a local filepath. Read with h5py.
-        f = h5py.File(filepath, "r")
+        file_handle = filepath
 
-    # Read the version information
-    try:
-        version = f["METADATA"]["DatasetIdentification"].attrs["VersionID"]
-        if isinstance(version, np.ndarray):
-            # ATL14 stores the version as an array ['00x']
-            version = version[0]
-        if isinstance(version, bytes):
-            version = version.decode()
+    # Read the version information. Use a context manager so the underlying
+    # HDF5/s3 handle is released even if attribute parsing raises.
+    with h5py.File(file_handle, "r") as f:
+        try:
+            version = f["METADATA"]["DatasetIdentification"].attrs["VersionID"]
+            if isinstance(version, np.ndarray):
+                # ATL14 stores the version as an array ['00x']
+                version = version[0]
+            if isinstance(version, bytes):
+                version = version.decode()
 
-    except KeyError as e:
-        raise Exception(
-            "Unable to parse the version from file metadata"
-        ).with_traceback(e.__traceback__)
+        except KeyError as e:
+            raise Exception(
+                "Unable to parse the version from file metadata"
+            ).with_traceback(e.__traceback__)
 
     # catch cases where the version number is an invalid string
     # e.g. a VersionID of "SET_BY_PGE", causing issues where version needs to be a valid number
@@ -379,7 +381,4 @@ def extract_version(filepath, auth=None):
             "provided in the metadata of this file."
             "Consider setting the version manually for further processing."
         )
-
-    # Close the file reader
-    f.close()
     return version
