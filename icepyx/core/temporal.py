@@ -135,7 +135,7 @@ def validate_times(
             "datetime.time"
         )
         # if end_time is a string, then it must be converted to a datetime using strptime
-        if not isinstance(end_time, dt.time):
+        if isinstance(end_time, str):
             end_time = dt.datetime.strptime(end_time, "%H:%M:%S").time()
     else:
         end_time = dt.time(23, 59, 59)
