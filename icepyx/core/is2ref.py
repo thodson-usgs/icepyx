@@ -1,3 +1,4 @@
+from functools import lru_cache
 import json
 import logging
 import warnings
@@ -74,9 +75,15 @@ def _validate_OA_product(product):
 
 
 # DevNote: test for this function is commented out; dates in some of the values were causing the test to fail...
+@lru_cache(maxsize=64)
 def about_product(prod):
     """
     Ping Earthdata to get metadata about the product of interest (the collection).
+
+    The result is cached for the lifetime of the process — collection
+    metadata changes infrequently (only when a new version is published)
+    and constructing several `Query` / `Variables` / `Read` objects in
+    a single session otherwise re-issues the same CMR request each time.
 
     See Also
     --------
@@ -269,9 +276,13 @@ def gt2spot(gt, sc_orient):
     return np.uint8(spot)
 
 
+@lru_cache(maxsize=64)
 def latest_version(product):
     """
     Determine the most recent version available for the given product.
+
+    The result is cached per process; see :func:`about_product` for the
+    rationale.
 
     Examples
     --------
