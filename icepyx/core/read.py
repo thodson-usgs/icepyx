@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import glob
 import os
 import sys
@@ -542,7 +543,7 @@ class Read(EarthdataAuthMixin):
 
         return is2ds
 
-    def load(self):
+    def load(self, max_workers=2):
         """
         Create a single Xarray Dataset containing the data from one or more
         files and/or ground tracks.
@@ -550,6 +551,15 @@ class Read(EarthdataAuthMixin):
 
         All items in the wanted variables list will be loaded from the files into memory.
         If you do not provide a wanted variables list, a default one will be created for you.
+
+        Parameters
+        ----------
+        max_workers : int, default 2
+            Number of threads used to read granules concurrently. HDF5 block
+            reads release the GIL, so a small pool overlaps disk I/O across
+            granules. The default of 2 is the empirical sweet spot on local
+            disk; raise it for high-latency s3 reads, or set to 1 to disable
+            concurrency.
         """
 
         # todo:
@@ -604,9 +614,7 @@ class Read(EarthdataAuthMixin):
         except AttributeError:
             pass
 
-        all_dss = []
-
-        for file in self.filelist:
+        def _process_one(file):
             if file.startswith("s3"):
                 # If path is an s3 path create an s3fs filesystem to reference the file
                 # TODO would it be better to be able to generate an s3fs session from the Mixin?
@@ -618,15 +626,14 @@ class Read(EarthdataAuthMixin):
                     "block_size": 8 * 1024 * 1024,
                 }
                 file = s3.open(file, "rb", **fsspec_params)
+            return self._build_single_file_dataset(file, groups_list)
 
-            all_dss.append(
-                self._build_single_file_dataset(file, groups_list)
-            )  # wanted_groups, vgrp.keys()))
-
-            # Closing the file prevents further operations on the dataset
-            # from s3fs.core import S3File
-            # if isinstance(file, S3File):
-            #     file.close()
+        workers = max(1, min(max_workers, len(self.filelist)))
+        if workers == 1:
+            all_dss = [_process_one(f) for f in self.filelist]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                all_dss = list(ex.map(_process_one, self.filelist))
 
         if len(all_dss) == 1:
             return all_dss[0]
