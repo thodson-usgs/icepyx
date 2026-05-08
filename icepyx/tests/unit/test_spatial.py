@@ -259,13 +259,8 @@ def test_numpy_tuple_latlon_pairs():
 
 
 def test_numpy_pairs_unclosed_polygon():
-    # Unclosed (N, 2) ndarray must be auto-closed without flattening.
-    # Previously np.insert without axis flattened the array and downstream
-    # iteration crashed (or silently produced garbage coordinates).
     with pytest.warns(UserWarning, match="closing the polygon automatically"):
-        poly = spat.Spatial(
-            np.array([[-55, 68], [-55, 71], [-48, 71], [-48, 68]])
-        )
+        poly = spat.Spatial(np.array([[-55, 68], [-55, 71], [-48, 71], [-48, 68]]))
     assert poly._ext_type == "polygon"
     assert poly._geom_file is None
     assert poly.extent == [
