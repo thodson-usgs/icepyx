@@ -557,11 +557,8 @@ class Read(EarthdataAuthMixin):
         ----------
         max_workers : int, default 2
             Maximum number of granules to read concurrently. Use 1 to disable
-            concurrency; raise it (e.g. 8) for high-latency s3 reads where
-            most of the time is spent waiting on network round-trips. h5py
-            serializes its C-API calls on a global RLock, so local-disk
-            speedup mostly comes from overlapping kernel readahead and
-            plateaus quickly past 2 workers.
+            concurrency; raise it (e.g. 8) for high-latency s3 reads. Local-
+            disk speedup plateaus past ~2 workers.
         """
 
         # todo:
